@@ -4,6 +4,7 @@ import java.awt.Point;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 
 public class Ladrao extends ProgramaLadrao {
@@ -26,22 +27,22 @@ public class Ladrao extends ProgramaLadrao {
 	
 	
 	// valores ponderados (HEURISTICA)
-	private static final int VISAO_FORA = -10;
-	private static final int VISAO_VAZIA = 5;
-	private static final int VISAO_PAREDE = -10;
+	private static final int VISAO_FORA = -5;
+	private static final int VISAO_VAZIA = 20;
+	private static final int VISAO_PAREDE = -5;
 	private static final int VISAO_POUP = 200;
 	private static final int VISAO_LADRAO = -1;
-	private static final int VISAO_MOEDA = -10;
-	private static final int VISAO_BANCO = -10;
+	private static final int VISAO_MOEDA = -5;
+	private static final int VISAO_BANCO = -5;
 	
 	private int esquerda = 0, direita = 0, cima = 0, baixo = 0;
 	private int ultimaAcao = 0;
 	private Point ultimoPonto;
 	private int[] mtzDecisao;
 	private boolean perseguindo;
-	private int movXSeguidos;
-	private int movYSeguidos;
+	private int poupPerseguido;
 	private int pondUltimaPos;
+	private int numMoedas;
 	
 	
 	private static final List<Integer> areaEsquerda = Arrays.asList(new Integer[] {0, 1, 5, 6, 10, 11, 14, 15, 19, 20});
@@ -51,6 +52,18 @@ public class Ladrao extends ProgramaLadrao {
 	
 	// representa as posicoes da matriz de olfato(3x3) na matriz de decisao(5x5)
 	private static final int[] olfatoDecisao = {6, 7, 8, 11, 12, 15, 16, 17};
+	private static final int[] pontoMatrizX = {-2, -1, 0, 1, 2,
+											   -2, -1, 0, 1, 2,
+											   -2, -1, 0, 1, 2,
+											   -2, -1, 0, 1, 2
+											   -2, -1, 0, 1, 2};
+	private static final int[] pontoMatrizY = {-2, -2, -2, -2, -2,
+											   -1, -1, -1, -1, -1,
+												0, 0, 0, 0, 0,
+											    1, 1, 1, 1, 1,
+											    2, 2, 2, 2, 2};
+	
+	private HashMap<Ponto, Integer> pontosPercorridos = new HashMap<Ponto, Integer>();
 	
 	public int acao() {
 		
@@ -62,13 +75,18 @@ public class Ladrao extends ProgramaLadrao {
 				0, 0, 0, 0, 0
 		};
 		
-		int acao = (int) (Math.random() * 5);
+		int acao = 0;
 		
 		montarMatrizDecisao(acao);
 		acao = realizarAcao(acao);
 		
 		ultimaAcao = acao;
 		ultimoPonto = sensor.getPosicao();
+		
+		adicionarUltimoPontoPercorrido();
+		
+		numMoedas = sensor.getNumeroDeMoedas();
+			
 		return acao;
 	}
 
@@ -82,8 +100,13 @@ public class Ladrao extends ProgramaLadrao {
 			if (visao >= LADRAO) {
 				mtzDecisao[i] = VISAO_LADRAO; 
 			} else if (visao >= POUPADOR && visao < LADRAO) {
-				mtzDecisao[i] = VISAO_POUP;
-				viuPoup = true;
+				// adiciona ponderacao para ir na direcao do poupador caso ja
+				// nao tenha roubado moedas e caso nao tenham ja 2 ladroes nele
+				if (!roubouMoedas() && !temDoisLadroes()) {
+					mtzDecisao[i] = VISAO_POUP;
+					viuPoup = true;
+					poupPerseguido = visao;
+				}
 			} else if (visao == PAREDE) {
 				mtzDecisao[i] = VISAO_PAREDE;
 			} else if (visao == MOEDA || visao == PASTILHA) {
@@ -92,11 +115,14 @@ public class Ladrao extends ProgramaLadrao {
 				mtzDecisao[i] = VISAO_BANCO;
 			} else if (visao == CELULA_VAZIA) {
 				mtzDecisao[i] = VISAO_VAZIA;
+				if (!perseguindo) {
+					ponderarPontosPercorridos(i);
+				}
 			} else if (visao == FORA_AMBIENTE || visao == SEM_VISAO) {
 				mtzDecisao[i] = VISAO_FORA;
 			}
 			
-			ponderacaoMovimentoImediato(i);
+			ponderacaoMovimentoImediato(visao, i);
 			
 			i++;
 		}
@@ -118,11 +144,61 @@ public class Ladrao extends ProgramaLadrao {
 		
 	}
 	
-	private void ponderacaoMovimentoImediato(int i) {
+	private boolean temDoisLadroes() {
+		int i = 0;
+		int ladroes = 0;
+		for (int visao : sensor.getVisaoIdentificacao()){
+			// se ver outro ladrao
+			if (visao >= LADRAO) {
+				 ladroes++;
+			}
+			
+			i++;
+		}
+		// retorna true se ver 2 ou mais ladroes
+		return (ladroes >= 2);
+	}
+
+	private boolean roubouMoedas() {
+		boolean roubou = false;
+		// se tiver roubado moedas
+		if (sensor.getNumeroDeMoedas() > numMoedas) {
+			roubou = true;
+		}
+		return roubou;
+	}
+
+	private void adicionarUltimoPontoPercorrido() {
+		// se nao estiver em perseguicao
+		if (!perseguindo) {
+			int valorUltimoPonto = 0;
+			if (pontosPercorridos.get(ultimoPonto) != null) {
+				// busca o valor do ultimo ponto corrido
+				valorUltimoPonto = pontosPercorridos.get(ultimoPonto);
+			}
+			
+			if (valorUltimoPonto > -20) {
+				// decrementa o valor do ultimo ponto para diminuir a chance de passar pelo mesmo ponto
+				pontosPercorridos.put(new Ponto(ultimoPonto), valorUltimoPonto - 5);
+			} else {
+				pontosPercorridos.put(new Ponto(ultimoPonto), 0);
+			}
+		}
+	}
+	
+	private void ponderarPontosPercorridos(int i) {
+		Ponto ponto = encontrarPonto(i);
+		if (pontosPercorridos.containsKey(ponto)) {
+			mtzDecisao[i] += pontosPercorridos.get(ponto);
+			System.out.println(pontosPercorridos.get(ponto));
+		}
+	}
+
+	private void ponderacaoMovimentoImediato(int visao, int i) {
 		// adiciona maior valor ponderado para os movimentos imediatos
 		if (i == 7 || i == 11 || i == 12 || i == 16) {
 			// valor entre 5 e 10 para multiplicar a acao de movimento imediato
-			mtzDecisao[i] = mtzDecisao[i] * ((int) (Math.random() * 10) + 5);
+			mtzDecisao[i] = mtzDecisao[i] * ((int) (Math.random() * 5) + 5);
 		}
 	}
 	
@@ -200,41 +276,15 @@ public class Ladrao extends ProgramaLadrao {
 			acao = BAI;
 		}
 		
-		calcularMovimentosSeguidos(acao);
-		
 		return acao;
 	}
 	
-	private void calcularMovimentosSeguidos(int acao) {
-		// calcula a quantidade de movimentos seguidos para ponderar na proxima
-		// acao, evitando movimentar-se num mesmo caminho infinita vezes
-		
-		// se a ultima acao for esquerda ou direita
-		if (ultimaAcao == ESQ || ultimaAcao == DIR) {
-			// e a proxima acao for esquerda ou direita
-			if (acao == ESQ || acao == DIR) {
-				movXSeguidos++;
-			} else {
-				movXSeguidos = 0;
-			}
-			
-		// se a ultima acao foi cima ou baixo
-		} else if (ultimaAcao == CIM || ultimaAcao == BAI) {
-			// e a proxima acao for cima ou baixo
-			if (acao == CIM || acao == BAI) {
-				movYSeguidos++;
-			} else {
-				movYSeguidos = 0;
-			}
-		}
-		
-	}
-
 	private void ponderarUltimaAcao() {
-		pondUltimaPos = -100;
+		// se a ultima acao nao tiver mudad
+		pondUltimaPos = -1000;
 		// verifica se a ultima acao houve mudanca de posicao
 		if (verificarMudancaPosicao()) {
-			pondUltimaPos = 100;
+			pondUltimaPos = 20;
 		}
 
 		// adiciona um valor a proxima acao caso ela seja igual a ultimaAcao de
@@ -249,21 +299,6 @@ public class Ladrao extends ProgramaLadrao {
 			baixo += pondUltimaPos;
 		}
 	
-		// se nao estiver perseguindo um poupador
-		if (!perseguindo) {
-			// o valor ponderado de ir pra esquerda ou direita recebe a
-			// quantidade de movimentos seguidos no eixo Y
-			if (movYSeguidos > 0) {
-				esquerda += movYSeguidos;
-				direita += movYSeguidos;
-			}
-			// o valor ponderado de ir pra cima ou baixo recebe a quantidade de
-			// movimentos seguidos no eixo X
-			if (movXSeguidos > 0) {
-				cima += movXSeguidos;
-				baixo += movXSeguidos;
-			}
-		}
 	}
 
 	private boolean verificarMudancaPosicao(){
@@ -279,5 +314,32 @@ public class Ladrao extends ProgramaLadrao {
 		return mudou;
 	}
 	
+	private Ponto encontrarPonto(int i) {
+		int xAtual = (int) sensor.getPosicao().getX();
+		int yAtual = (int) sensor.getPosicao().getY();
+		Ponto ponto = new Ponto(xAtual + pontoMatrizX[i], yAtual + pontoMatrizY[i]);
+		return ponto;
+	}
 
+}
+
+class Ponto extends Point {
+	
+	Ponto(int x, int y) {
+		super(x, y);
+	}
+	
+	Ponto(Point point) {
+		super(point);
+	}
+	
+	@Override
+	public boolean equals(Object objeto) {
+		boolean retorno = super.equals(objeto);
+		if (objeto instanceof Ponto) {
+			Ponto ponto = (Ponto) objeto;
+			retorno = (this.getX() == ponto.getX() && this.getY() == ponto.getY());
+		}
+		return retorno;
+	}
 }
