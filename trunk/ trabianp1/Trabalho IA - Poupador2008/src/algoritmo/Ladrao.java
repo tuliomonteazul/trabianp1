@@ -31,7 +31,7 @@ public class Ladrao extends ProgramaLadrao {
 	private static final int VISAO_VAZIA = 20;
 	private static final int VISAO_PAREDE = -5;
 	private static final int VISAO_POUP = 200;
-	private static final int VISAO_LADRAO = -1;
+	private static final int VISAO_LADRAO = 0;
 	private static final int VISAO_MOEDA = -5;
 	private static final int VISAO_BANCO = -5;
 	
@@ -40,7 +40,6 @@ public class Ladrao extends ProgramaLadrao {
 	private Point ultimoPonto;
 	private int[] mtzDecisao;
 	private boolean perseguindo;
-	private int poupPerseguido;
 	private int pondUltimaPos;
 	private int numMoedas;
 	
@@ -52,16 +51,20 @@ public class Ladrao extends ProgramaLadrao {
 	
 	// representa as posicoes da matriz de olfato(3x3) na matriz de decisao(5x5)
 	private static final int[] olfatoDecisao = {6, 7, 8, 11, 12, 15, 16, 17};
+	
+	// valores para transferir a posicao atual do ladrao para um ponto do campo de visão
 	private static final int[] pontoMatrizX = {-2, -1, 0, 1, 2,
 											   -2, -1, 0, 1, 2,
+											   -2, -1,    1, 2,
 											   -2, -1, 0, 1, 2,
-											   -2, -1, 0, 1, 2
 											   -2, -1, 0, 1, 2};
 	private static final int[] pontoMatrizY = {-2, -2, -2, -2, -2,
 											   -1, -1, -1, -1, -1,
-												0, 0, 0, 0, 0,
+												0, 0,    0, 0,
 											    1, 1, 1, 1, 1,
 											    2, 2, 2, 2, 2};
+	
+	private static final List<Integer> poupadoresPerseguidos = new ArrayList<Integer>();
 	
 	private HashMap<Ponto, Integer> pontosPercorridos = new HashMap<Ponto, Integer>();
 	
@@ -72,7 +75,7 @@ public class Ladrao extends ProgramaLadrao {
 				0, 0, 0, 0, 0,
 				0, 0, 0, 0, 0,
 				0, 0, 0, 0, 0,
-				0, 0, 0, 0, 0
+				0, 0, 0, 0
 		};
 		
 		int acao = 0;
@@ -105,7 +108,9 @@ public class Ladrao extends ProgramaLadrao {
 				if (!roubouMoedas() && !temDoisLadroes()) {
 					mtzDecisao[i] = VISAO_POUP;
 					viuPoup = true;
-					poupPerseguido = visao;
+//					if (!poupadoresPerseguidos.contains(visao)) {
+//						poupadoresPerseguidos.add(visao);
+//					}
 				}
 			} else if (visao == PAREDE) {
 				mtzDecisao[i] = VISAO_PAREDE;
@@ -138,7 +143,7 @@ public class Ladrao extends ProgramaLadrao {
 		i = 0;
 		for (int olfato : mtzOlfatoPonderado){
 			posicaoRelativa = olfatoDecisao[i];
-			mtzDecisao[posicaoRelativa] = mtzDecisao[posicaoRelativa] * olfato;
+			mtzDecisao[posicaoRelativa] = mtzDecisao[posicaoRelativa] + olfato;
 			i++;
 		}
 		
@@ -190,7 +195,6 @@ public class Ladrao extends ProgramaLadrao {
 		Ponto ponto = encontrarPonto(i);
 		if (pontosPercorridos.containsKey(ponto)) {
 			mtzDecisao[i] += pontosPercorridos.get(ponto);
-			System.out.println(pontosPercorridos.get(ponto));
 		}
 	}
 
@@ -209,13 +213,13 @@ public class Ladrao extends ProgramaLadrao {
 		for (int i = 0; i < 8; i++) {
 			if (ambienteOlfatoPoupador[i] == 0) {
 				// se o olfato for 0, pondera como 1 (para ser multiplicado por 1 e não ser alterado o valor)
-				mtzPonderada[i] = 1;
+				mtzPonderada[i] = 0;
 				
 			} else if (ambienteOlfatoPoupador[i] >= 1) {
 				// se o olfato for maior que 1, pondera com o modulo da
-				// diferença do valor por 6, ex. para valor = 1, o valor
-				// ponderado = 5
-				mtzPonderada[i] = Math.abs(ambienteOlfatoPoupador[i] - 6);
+				// diferença do valor por 6 vezes 10, ex. para valor = 1,
+				// o valor ponderado = 5 x 20 = 100
+				mtzPonderada[i] = Math.abs(ambienteOlfatoPoupador[i] - 6) * 20;
 			}
 		}
 		
@@ -342,4 +346,5 @@ class Ponto extends Point {
 		}
 		return retorno;
 	}
+	
 }
