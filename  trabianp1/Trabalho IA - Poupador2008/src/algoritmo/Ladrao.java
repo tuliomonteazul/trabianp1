@@ -34,6 +34,8 @@ public class Ladrao extends ProgramaLadrao {
 	private static final int VISAO_LADRAO = 0;
 	private static final int VISAO_MOEDA = -5;
 	private static final int VISAO_BANCO = -5;
+	private static final int PERSEGUIR = 200;
+	private int visaoPoup = VISAO_POUP;
 	
 	private int esquerda = 0, direita = 0, cima = 0, baixo = 0;
 	private int ultimaAcao = 0;
@@ -41,6 +43,7 @@ public class Ladrao extends ProgramaLadrao {
 	private int[] mtzDecisao;
 	private boolean perseguindo;
 	private int pondUltimaPos;
+	private int poupPerseguindo;
 	private int numMoedas;
 	
 	
@@ -64,7 +67,7 @@ public class Ladrao extends ProgramaLadrao {
 											    1, 1, 1, 1, 1,
 											    2, 2, 2, 2, 2};
 	
-	private static final List<Integer> poupadoresPerseguidos = new ArrayList<Integer>();
+	private static final HashMap<Integer, Ponto> poupadoresPerseguidos = new HashMap<Integer, Ponto>();
 	
 	private HashMap<Ponto, Integer> pontosPercorridos = new HashMap<Ponto, Integer>();
 	
@@ -88,12 +91,51 @@ public class Ladrao extends ProgramaLadrao {
 		
 		adicionarUltimoPontoPercorrido();
 		
+		ponderarPerseguidos();
+
+		aumentarValorVisaoPoup();
+		
 		numMoedas = sensor.getNumeroDeMoedas();
-			
+		
 		return acao;
 	}
 
+	private void aumentarValorVisaoPoup() {
+		// aumenta a ponderação do poupador gradativamente se ela for menor que
+		// o máximo
+		if (visaoPoup < VISAO_POUP){
+			visaoPoup += 10;
+		}
+	}
+
+	private void ponderarPerseguidos() {
+		// se não estiver perseguindo ninguem
+		if (poupPerseguindo == 0) {
+			final Point meuPonto = sensor.getPosicao();
+			
+			// percorrer os poupadores que estão sendo perseguidos
+			for (Integer poupador : poupadoresPerseguidos.keySet()) {
+				final Ponto pontoPoup = poupadoresPerseguidos.get(poupador);
+				if (pontoPoup.getX() > meuPonto.getX()) {
+					direita += PERSEGUIR;
+				} else {
+					esquerda += PERSEGUIR;
+				}
+				if (pontoPoup.getY() > meuPonto.getY()) {
+					baixo += PERSEGUIR;
+				} else {
+					cima += PERSEGUIR;
+				}
+			}
+		}
+	}
+
 	private void montarMatrizDecisao(int retornoAtual) {
+		
+		// se tiver roubado moedas, reduz a ponderacao do poupador
+		if (roubouMoedas()) {
+			visaoPoup = 0;
+		}
 		
 		// Utilizando a visão
 		int i = 0;
@@ -102,16 +144,18 @@ public class Ladrao extends ProgramaLadrao {
 			// se houver outro ladrao
 			if (visao >= LADRAO) {
 				mtzDecisao[i] = VISAO_LADRAO; 
+			
+			// se houver poupador
 			} else if (visao >= POUPADOR && visao < LADRAO) {
 				// adiciona ponderacao para ir na direcao do poupador caso ja
 				// nao tenha roubado moedas e caso nao tenham ja 2 ladroes nele
-				if (!roubouMoedas() && !temDoisLadroes()) {
-					mtzDecisao[i] = VISAO_POUP;
-					viuPoup = true;
-//					if (!poupadoresPerseguidos.contains(visao)) {
-//						poupadoresPerseguidos.add(visao);
-//					}
+				mtzDecisao[i] = visaoPoup;
+				viuPoup = true;
+				if (!poupadoresPerseguidos.containsKey(visao)) {
+					poupadoresPerseguidos.put(visao, encontrarPonto(i));
+					poupPerseguindo = visao;
 				}
+				
 			} else if (visao == PAREDE) {
 				mtzDecisao[i] = VISAO_PAREDE;
 			} else if (visao == MOEDA || visao == PASTILHA) {
@@ -134,34 +178,31 @@ public class Ladrao extends ProgramaLadrao {
 		
 		perseguindo = viuPoup;
 		
-		// Utilizando olfato
-		int[] mtzOlfatoPonderado = ponderarOlfato(sensor.getAmbienteOlfatoPoupador());
-		
-		// posicao da matriz olfato relativa na matriz decisao
-		int posicaoRelativa = 0;
-		
-		i = 0;
-		for (int olfato : mtzOlfatoPonderado){
-			posicaoRelativa = olfatoDecisao[i];
-			mtzDecisao[posicaoRelativa] = mtzDecisao[posicaoRelativa] + olfato;
-			i++;
-		}
-		
-	}
-	
-	private boolean temDoisLadroes() {
-		int i = 0;
-		int ladroes = 0;
-		for (int visao : sensor.getVisaoIdentificacao()){
-			// se ver outro ladrao
-			if (visao >= LADRAO) {
-				 ladroes++;
+		// se para de perseguir
+		if (!perseguindo) {
+			// e estava perseguindo alguem
+			if (poupadoresPerseguidos.containsKey(poupPerseguindo)) {
+				// remove da lista de perseguidos
+				poupadoresPerseguidos.remove(poupPerseguindo);
 			}
-			
-			i++;
+			poupPerseguindo = 0;
 		}
-		// retorna true se ver 2 ou mais ladroes
-		return (ladroes >= 2);
+		
+		// Utilizando olfato
+		if (!perseguindo) {
+			int[] mtzOlfatoPonderado = ponderarOlfato(sensor.getAmbienteOlfatoPoupador());
+			
+			// posicao da matriz olfato relativa na matriz decisao
+			int posicaoRelativa = 0;
+			
+			i = 0;
+			for (int olfato : mtzOlfatoPonderado){
+				posicaoRelativa = olfatoDecisao[i];
+				mtzDecisao[posicaoRelativa] = mtzDecisao[posicaoRelativa] * olfato;
+				i++;
+			}
+		}
+		
 	}
 
 	private boolean roubouMoedas() {
@@ -213,13 +254,13 @@ public class Ladrao extends ProgramaLadrao {
 		for (int i = 0; i < 8; i++) {
 			if (ambienteOlfatoPoupador[i] == 0) {
 				// se o olfato for 0, pondera como 1 (para ser multiplicado por 1 e não ser alterado o valor)
-				mtzPonderada[i] = 0;
+				mtzPonderada[i] = 1;
 				
 			} else if (ambienteOlfatoPoupador[i] >= 1) {
 				// se o olfato for maior que 1, pondera com o modulo da
 				// diferença do valor por 6 vezes 10, ex. para valor = 1,
 				// o valor ponderado = 5 x 20 = 100
-				mtzPonderada[i] = Math.abs(ambienteOlfatoPoupador[i] - 6) * 20;
+				mtzPonderada[i] = Math.abs(ambienteOlfatoPoupador[i] - 7);
 			}
 		}
 		
@@ -327,6 +368,10 @@ public class Ladrao extends ProgramaLadrao {
 
 }
 
+/**
+ * Representa um Point com o método equals comparando os seus valores X e Y ao
+ * invés de comparar a referencia do objeto.
+ */
 class Ponto extends Point {
 	
 	Ponto(int x, int y) {
